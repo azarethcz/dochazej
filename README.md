@@ -1,41 +1,119 @@
-# Docházka – Laravel aplikace
+# Docházkový systém Docházej
 
-Evidence pracovní doby s přihlašováním a rolemi (administrátor / zaměstnanec), přestávkami,
-žádostmi o dovolenou a exportem do XLSX / PDF.
+Docházkový systém vytvořený v **Laravelu**. Obsahuje správu zaměstnanců, evidenci docházky, přestávek, dovolených a export docházky do XLSX.
 
-Tento balík obsahuje **aplikační kód** (migrace, modely, controllery, routy, blade šablony),
-ne kompletní instalaci Laravelu — framework a jeho závislosti se stáhnou přes Composer.
-Instalace vyžaduje internetové připojení, PHP 8.2+, Composer a databázi (MySQL/MariaDB/PostgreSQL/SQLite).
+---
 
-Kompletní instalační manuál pro projekt Docházka
-Tento návod integruje všechny kroky potřebné k úspěšnému zprovoznění projektu "Docházka" v Laravelu 11 včetně řešení specifických chyb a úpravy kódu.
-Instalace od nuly
-Vytvořte čistý Laravel projekt:
-Bash
+## 🚀 Instalace od nuly
+
+### 1. Vytvoření čistého Laravel projektu
+
+Vytvořte nový Laravel projekt:
+
+```bash
 composer create-project laravel/laravel dochazka
 cd dochazka
-Zkopírujte do něj obsah balíčku (přepište composer.json, routes/web.php a .env.example, doplňte app/, database/, resources/views/):
-Bash
+```
+
+### 2. Zkopírování obsahu balíčku
+
+Do nově vytvořeného projektu zkopírujte obsah tohoto balíčku.
+
+> **Poznámka:** Přepište zejména `composer.json`, `routes/web.php` a `.env.example`.
+
+```bash
 cp -r /cesta/k/tomuto/balicku/app ./
 cp -r /cesta/k/tomuto/balicku/database/migrations ./database/
 cp -r /cesta/k/tomuto/balicku/database/seeders ./database/
 cp -r /cesta/k/tomuto/balicku/resources/views ./resources/
 cp /cesta/k/tomuto/balicku/routes/web.php ./routes/web.php
-Nainstalujte doplňkový balíček pro export do Excelu (s parametrem -W pro vyřešení případných konfliktů závislostí):
-Bash
+```
+
+---
+
+## 📦 Instalace závislostí
+
+Nainstalujte doplňkový balíček pro export docházky do Excelu:
+
+```bash
 composer require maatwebsite/excel -W
-Zaregistrujte middleware admin — otevřete bootstrap/app.php a do sekce ->withMiddleware(function (Middleware $middleware) { ... }) přidejte:
-PHP
+```
+
+Parametr `-W` (`--with-all-dependencies`) umožní Composeru aktualizovat potřebné závislosti a pomáhá řešit případné konflikty verzí balíčků.
+
+---
+
+## 🔐 Registrace Admin Middleware
+
+Otevřete soubor:
+
+```text
+bootstrap/app.php
+```
+
+Do části:
+
+```php
+->withMiddleware(function (Middleware $middleware) {
+    // ...
+})
+```
+
+přidejte alias pro administrátorské middleware:
+
+```php
 $middleware->alias([
     'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
 ]);
-Připravte adresářovou strukturu a SQLite databázi:
-Bash
+```
+
+Middleware následně umožňuje chránit administrátorské routy pomocí:
+
+```php
+->middleware('admin')
+```
+
+---
+
+## 🗄️ Příprava adresářů a SQLite databáze
+
+Vytvořte potřebné adresáře:
+
+```bash
 mkdir -p bootstrap/cache storage
+```
+
+Nastavte oprávnění:
+
+```bash
 chmod -R 775 bootstrap/cache storage
+```
+
+Vytvořte SQLite databázi:
+
+```bash
 touch database/database.sqlite
-Vytvořte v adresáři app/Http/Controllers/ chybějící soubor Controller.php se základní třídou:
-PHP
+```
+
+Pokud používáte SQLite, zkontrolujte v `.env`, že je databáze nastavena například takto:
+
+```env
+DB_CONNECTION=sqlite
+```
+
+---
+
+## 🧩 Controller.php
+
+Pokud v projektu chybí základní controller, vytvořte soubor:
+
+```text
+app/Http/Controllers/Controller.php
+```
+
+se základní třídou:
+
+```php
 <?php
 
 namespace App\Http\Controllers;
@@ -44,60 +122,297 @@ abstract class Controller
 {
     //
 }
-Nastavte soubor .env (vytvořte ho ručně nebo zkopírujte ze vzoru) a zadejte SQLite připojení a databázové sessions:
-Fragment kódu
-APP_NAME=Laravel
-APP_ENV=local
-APP_KEY=
-APP_DEBUG=true
-APP_URL=http://localhost
+```
 
-DB_CONNECTION=sqlite
-DB_DATABASE=database/database.sqlite
-SESSION_DRIVER=database
-Vytvořte chybějící migraci pro tabulku sessions:
-Bash
-php artisan session:table
-Upravte soubor app/Http/Controllers/DashboardController.php v metodě index, aby se předešlo chybě s metodou load() na smíšené kolekci:
-PHP
-$user = $request->user();
+---
+
+## 👤 Načtení zaměstnanců a dnešní docházky
+
+Příklad logiky pro načtení zaměstnanců a jejich dnešní docházky:
+
+```php
+$user = auth()->user();
 
 $query = $user->isAdmin()
     ? User::where('role', 'employee')->orderBy('name')
     : User::where('id', $user->id);
 
-$employees = $query->with(['attendances' => function ($q) {
-    $q->whereDate('clock_in', today())->with('breakPeriods');
-}])->get();
-Vymažte konfigurační cache, vygenerujte klíč a spusťte migrace se seedem:
-Bash
+$employees = $query
+    ->with([
+        'attendances' => function ($q) {
+            $q->whereDate('clock_in', today())
+              ->with('breakPeriods');
+        }
+    ])
+    ->get();
+```
+
+> Ujistěte se, že jsou v příslušném controlleru importovány potřebné modely, například `User`.
+
+---
+
+## ⚙️ Inicializace aplikace
+
+Před prvním spuštěním vymažte konfigurační cache, vygenerujte aplikační klíč a vytvořte databázové tabulky včetně ukázkových dat:
+
+```bash
 php artisan config:clear
 php artisan key:generate
 php artisan migrate:fresh --seed
+```
+
+> ⚠️ `migrate:fresh` smaže všechny existující tabulky v databázi a vytvoří je znovu. Nepoužívejte jej na produkční databázi, pokud nechcete přijít o její data.
+
+---
+
+## ▶️ Spuštění aplikace
+
 Spusťte lokální vývojový server:
-Bash
+
+```bash
 php artisan serve
-Otevřete http://localhost:8000. Přihlašovací údaje z ukázkových dat (seeder):
-Administrátor: e-mail admin@example.com, heslo heslo1234
-Zaměstnanci: Jana Nováková, Petr Svoboda — přihlašují se jen výběrem jména (bez hesla, model "sdíleného terminálu").
+```
 
+Aplikace bude dostupná na:
 
-## Struktura
+```text
+http://localhost:8000
+```
 
-- `app/Models` – `User` (role admin/employee), `Attendance`, `BreakPeriod`, `VacationRequest`
-- `app/Http/Controllers` – logika docházky, zaměstnanců, záznamů/exportů, dovolené, nastavení
-- `app/Http/Middleware/EnsureUserIsAdmin.php` – ochrana administrátorských routes
-- `database/migrations` – schéma databáze
-- `database/seeders/DatabaseSeeder.php` – ukázková data
-- `resources/views` – Blade šablony (sdílený layout + jednotlivé stránky)
-- `app/Exports/AttendanceExport.php` – export docházky do XLSX (maatwebsite/excel)
+---
 
-## Co lze podle konkrétní zakázky dál rozšířit
+# 🔑 Přihlašovací údaje
 
-- PIN/heslo i pro zaměstnance, případně 2FA pro administrátora
-- Skutečné generování PDF na serveru (balíček `barryvdh/laravel-dompdf`) místo
-  tiskového dialogu prohlížeče
-- Notifikace e-mailem při schválení/zamítnutí dovolené (Laravel Notifications)
-- Docházkové terminály / RFID karty / mobilní aplikace místo ručního klikání
-- Napojení na mzdový systém (export ve formátu konkrétní mzdové účetní)
-- Vícejazyčnost, více poboček/středisek, směnové plány
+Ukázková data jsou vytvořena pomocí `DatabaseSeeder`.
+
+### Administrátor
+
+```text
+E-mail: admin@example.com
+Heslo: heslo1234
+```
+
+### Zaměstnanci
+
+Ukázkoví zaměstnanci:
+
+* Jana Nováková
+* Petr Svoboda
+
+Zaměstnanci se přihlašují pouze **výběrem svého jména bez hesla**.
+
+Tento způsob přihlášení je určen pro použití ve scénáři **sdíleného docházkového terminálu**.
+
+> ⚠️ Výchozí heslo administrátora je určeno pouze pro ukázková data. V produkčním prostředí jej změňte.
+
+---
+
+# 📁 Struktura projektu
+
+```text
+app/
+├── Exports/
+│   └── AttendanceExport.php
+│
+├── Http/
+│   ├── Controllers/
+│   │   ├── ...
+│   │   └── Controller.php
+│   │
+│   └── Middleware/
+│       └── EnsureUserIsAdmin.php
+│
+└── Models/
+    ├── User.php
+    ├── Attendance.php
+    ├── BreakPeriod.php
+    └── VacationRequest.php
+
+database/
+├── migrations/
+│   └── ...
+│
+└── seeders/
+    └── DatabaseSeeder.php
+
+resources/
+└── views/
+    ├── layouts/
+    └── ...
+
+routes/
+└── web.php
+
+bootstrap/
+└── app.php
+```
+
+### Hlavní části projektu
+
+| Cesta                                       | Popis                                 |
+| ------------------------------------------- | ------------------------------------- |
+| `app/Models/`                               | Datové modely aplikace                |
+| `app/Models/User.php`                       | Uživatelé a role `admin` / `employee` |
+| `app/Models/Attendance.php`                 | Záznamy docházky                      |
+| `app/Models/BreakPeriod.php`                | Evidence přestávek                    |
+| `app/Models/VacationRequest.php`            | Žádosti o dovolenou                   |
+| `app/Http/Controllers/`                     | Logika aplikace                       |
+| `app/Http/Middleware/EnsureUserIsAdmin.php` | Ochrana administrátorských rout       |
+| `database/migrations/`                      | Databázové schéma                     |
+| `database/seeders/DatabaseSeeder.php`       | Ukázková data                         |
+| `resources/views/`                          | Blade šablony                         |
+| `app/Exports/AttendanceExport.php`          | Export docházky do XLSX               |
+| `routes/web.php`                            | Definice webových rout                |
+
+---
+
+# 📊 Export docházky
+
+Export docházky do formátu **XLSX** je řešen pomocí balíčku:
+
+```text
+maatwebsite/excel
+```
+
+Hlavní exportní třída:
+
+```text
+app/Exports/AttendanceExport.php
+```
+
+Instalace:
+
+```bash
+composer require maatwebsite/excel -W
+```
+
+---
+
+# 🔮 Možná další rozšíření
+
+Aplikaci lze podle konkrétního zadání dále rozšířit.
+
+### 🔐 Bezpečnost a přihlášení
+
+* PIN nebo heslo také pro zaměstnance
+* 2FA (dvoufaktorové ověření) pro administrátora
+* omezení přístupu podle IP adresy
+* auditní log administrátorských akcí
+
+### 📄 PDF dokumenty
+
+Skutečné generování PDF přímo na serveru pomocí balíčku:
+
+```bash
+composer require barryvdh/laravel-dompdf
+```
+
+Místo současného využití tiskového dialogu prohlížeče by tak bylo možné generovat PDF dokumenty přímo v aplikaci.
+
+### 📧 E-mailové notifikace
+
+Pomocí **Laravel Notifications** lze přidat například:
+
+* oznámení o schválení dovolené
+* oznámení o zamítnutí dovolené
+* upozornění administrátora na nové žádosti
+* automatické e-mailové reporty docházky
+
+### 🪪 Docházkové terminály
+
+Možné je doplnit podporu pro:
+
+* RFID karty
+* NFC
+* docházkové terminály
+* QR kódy
+* mobilní aplikaci
+* automatickou identifikaci zaměstnance
+
+### 💰 Napojení na mzdový systém
+
+Export docházky lze přizpůsobit konkrétnímu mzdovému systému nebo účetnímu programu.
+
+Například:
+
+```text
+CSV
+XLSX
+XML
+API
+```
+
+### 🌍 Více poboček a středisek
+
+Možné rozšíření o:
+
+* více poboček
+* střediska
+* oddělení
+* manažery jednotlivých poboček
+* oprávnění podle poboček
+
+### 🕐 Směnové plány
+
+Další možností je implementace:
+
+* směnových kalendářů
+* ranních / odpoledních / nočních směn
+* plánování směn
+* automatického vyhodnocení přesčasů
+* evidence práce o víkendech a svátcích
+
+---
+
+# 🛠️ Technologie
+
+Projekt je postaven na:
+
+* **PHP**
+* **Laravel**
+* **Blade**
+* **SQLite**
+* **Composer**
+* **Maatwebsite Laravel Excel**
+
+---
+
+## 📌 Rychlý start
+
+Pro rychlé spuštění projektu lze postupovat následovně:
+
+```bash
+composer create-project laravel/laravel dochazka
+cd dochazka
+
+# Zkopírování souborů projektu
+cp -r /cesta/k/balicku/app ./
+cp -r /cesta/k/balicku/database/migrations ./database/
+cp -r /cesta/k/balicku/database/seeders ./database/
+cp -r /cesta/k/balicku/resources/views ./resources/
+cp /cesta/k/balicku/routes/web.php ./routes/web.php
+
+# Instalace Excel exportu
+composer require maatwebsite/excel -W
+
+# SQLite
+touch database/database.sqlite
+
+# Laravel
+php artisan config:clear
+php artisan key:generate
+php artisan migrate:fresh --seed
+
+# Spuštění
+php artisan serve
+```
+
+Poté otevřete:
+
+```text
+http://localhost:8000
+```
+
+**Administrátor:** `admin@example.com` / `heslo1234`
+
+**Zaměstnanci:** přihlášení výběrem jména.
