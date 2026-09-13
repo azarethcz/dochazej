@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:80"
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: http://localhost:8080
+      DB_CONNECTION: sqlite
+    volumes:
+      # Keep the SQLite database (and generated exports/cache) outside the
+      # container so data survives rebuilds/restarts.
+      - dochazej-database:/var/www/html/database
+      - dochazej-storage:/var/www/html/storage
+
+volumes:
+  dochazej-database:
+  dochazej-storage:
